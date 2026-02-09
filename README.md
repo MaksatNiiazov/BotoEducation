@@ -1,4 +1,4 @@
-# Сервис сокращения URL
+﻿# Сервис сокращения URL
 
 Минимальный production-ориентированный сокращатель ссылок на FastAPI и SQLite (stdlib).
 
@@ -11,7 +11,7 @@
 
 Создайте виртуальное окружение и установите зависимости:
 
-```bash
+```powershell
 python -m venv .venv
 .\.venv\Scripts\activate
 pip install -e ".[dev]"
