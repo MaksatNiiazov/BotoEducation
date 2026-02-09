@@ -1,0 +1,13 @@
+.idea/
+__pycache__/
+*.pyc
+.pytest_cache/
+pytest-cache-files-*/
+venv/
+.env
+.env.*
+data/
+*.db
+*.sqlite
+*.sqlite3
+url_shortener.egg-info/
