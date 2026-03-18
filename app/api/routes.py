@@ -1,50 +1,58 @@
 from __future__ import annotations
 
-import logging
-
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Header, HTTPException, status
 from fastapi.responses import RedirectResponse
 
 from app.core.config import get_settings
-from app.models.shorten import ShortenRequest, ShortenResponse
+from app.core.executor import run_sync
+from app.core.security import parse_user_token
+from app.models.shorten import LinkInfo, ShortenRequest, ShortenResponse
 from app.services import shortener
 
-logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _extract_user_id(authorization: str | None) -> str:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing token")
+    token = authorization.split(" ", 1)[1]
+    try:
+        return parse_user_token(token)
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail="Invalid token") from exc
+
+
 @router.post("/shorten", response_model=ShortenResponse, status_code=status.HTTP_201_CREATED)
-def create_short_url(payload: ShortenRequest) -> ShortenResponse:
+async def create_short_url(payload: ShortenRequest, authorization: str | None = Header(default=None)) -> ShortenResponse:
+    settings = get_settings()
+    user_id = _extract_user_id(authorization)
+    try:
+        code = await run_sync(
+            shortener.create_short_code,
+            user_id,
+            str(payload.url),
+            max_workers=settings.thread_pool_workers,
+        )
+    except shortener.StorageError as exc:
+        raise HTTPException(status_code=500, detail="Internal error") from exc
+    return ShortenResponse(short_url=f"{settings.base_url.rstrip('/')}/{code}")
+
+
+@router.get("/{code}", response_class=RedirectResponse, status_code=status.HTTP_302_FOUND)
+async def redirect_to_original(code: str) -> RedirectResponse:
     settings = get_settings()
     try:
-        code = shortener.create_short_code(payload.url)
-    except shortener.InvalidUrlError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    except shortener.StorageError as exc:
-        logger.exception("Failed to create short URL.")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal error") from exc
-
-    base_url = settings.base_url.rstrip("/")
-    return ShortenResponse(short_url=f"{base_url}/{code}")
-
-
-@router.get(
-    "/{code}",
-    status_code=status.HTTP_302_FOUND,
-    response_class=RedirectResponse,
-    responses={
-        302: {"description": "Redirect"},
-        404: {"description": "Short code not found"},
-        500: {"description": "Internal error"},
-    },
-)
-def redirect_to_original(code: str) -> RedirectResponse:
-    try:
-        url = shortener.get_original_url(code)
+        url = await run_sync(shortener.get_original_url, code, max_workers=settings.thread_pool_workers)
     except shortener.NotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except shortener.StorageError as exc:
-        logger.exception("Failed to redirect.")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal error") from exc
-
+        raise HTTPException(status_code=500, detail="Internal error") from exc
     return RedirectResponse(url=url, status_code=status.HTTP_302_FOUND)
+
+
+@router.get("/me/links", response_model=list[LinkInfo])
+async def my_links(authorization: str | None = Header(default=None)) -> list[LinkInfo]:
+    settings = get_settings()
+    user_id = _extract_user_id(authorization)
+    rows = await run_sync(shortener.get_user_links, user_id, max_workers=settings.thread_pool_workers)
+    return [LinkInfo(**row) for row in rows]

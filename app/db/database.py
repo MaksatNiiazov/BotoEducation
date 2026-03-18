@@ -1,39 +1,34 @@
 from __future__ import annotations
 
-import logging
 import os
 import sqlite3
 from contextlib import contextmanager
 
 from app.core.config import get_settings
 
-logger = logging.getLogger(__name__)
-
 
 @contextmanager
 def get_connection() -> sqlite3.Connection:
-    settings = get_settings()
-    db_path = settings.database_path
-    db_dir = os.path.dirname(db_path)
-    if db_dir:
-        os.makedirs(db_dir, exist_ok=True)
-    connection = sqlite3.connect(db_path, check_same_thread=False)
-    connection.row_factory = sqlite3.Row
+    db_path = get_settings().database_path
+    os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
+    conn = sqlite3.connect(db_path, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
     try:
-        yield connection
+        yield conn
     finally:
-        connection.close()
+        conn.close()
 
 
 def init_db() -> None:
     schema = """
     CREATE TABLE IF NOT EXISTS links (
-        code TEXT PRIMARY KEY,
-        url TEXT NOT NULL,
-        created_at TEXT NOT NULL
+      code TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      url TEXT NOT NULL,
+      created_at TEXT NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS idx_links_user_id ON links(user_id);
     """
-    with get_connection() as connection:
-        connection.execute(schema)
-        connection.commit()
-    logger.info("Database schema ensured.")
+    with get_connection() as conn:
+        conn.executescript(schema)
+        conn.commit()

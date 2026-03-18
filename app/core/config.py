@@ -12,10 +12,16 @@ class Settings:
     database_path: str
     base_url: str
     log_level: str
+    log_file_path: str
+    thread_pool_workers: int
+    jwt_secret: str
+    jwt_algorithm: str
+    bot_token: str | None
+    admin_chat_id: str | None
 
 
-def _get_env(name: str) -> str:
-    value = os.getenv(name)
+def _get_env(name: str, default: str | None = None) -> str:
+    value = os.getenv(name, default)
     if value is None or value.strip() == "":
         raise RuntimeError(f"Missing required environment variable: {name}")
     return value
@@ -23,16 +29,16 @@ def _get_env(name: str) -> str:
 
 @lru_cache
 def get_settings() -> Settings:
-    app_port_raw = _get_env("APP_PORT")
-    try:
-        app_port = int(app_port_raw)
-    except ValueError as exc:
-        raise RuntimeError("APP_PORT must be an integer") from exc
-
     return Settings(
         app_host=_get_env("APP_HOST"),
-        app_port=app_port,
+        app_port=int(_get_env("APP_PORT")),
         database_path=_get_env("DATABASE_PATH"),
         base_url=_get_env("BASE_URL"),
-        log_level=_get_env("LOG_LEVEL"),
+        log_level=_get_env("LOG_LEVEL", "INFO"),
+        log_file_path=_get_env("LOG_FILE_PATH", "./logs/app.json.log"),
+        thread_pool_workers=int(_get_env("THREAD_POOL_WORKERS", "8")),
+        jwt_secret=_get_env("JWT_SECRET"),
+        jwt_algorithm=_get_env("JWT_ALGORITHM", "HS256"),
+        bot_token=os.getenv("BOT_TOKEN"),
+        admin_chat_id=os.getenv("ADMIN_CHAT_ID"),
     )
